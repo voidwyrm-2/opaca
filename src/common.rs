@@ -1,7 +1,10 @@
 use std::{
     error::Error,
     fmt::{self, Debug, Display},
+    io,
 };
+
+pub const PATH_SEP: char = if std::cfg!(windows) { '\\' } else { '/' };
 
 pub struct OpacaError {
     msg: String,
@@ -23,6 +26,12 @@ impl From<String> for OpacaError {
 
 impl From<fmt::Error> for OpacaError {
     fn from(value: fmt::Error) -> Self {
+        OpacaError::from(format!("{}", value))
+    }
+}
+
+impl From<io::Error> for OpacaError {
+    fn from(value: io::Error) -> Self {
         OpacaError::from(format!("{}", value))
     }
 }

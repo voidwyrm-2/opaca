@@ -3,7 +3,7 @@ use std::{
     fmt::{Debug, Display},
 };
 
-use crate::common::{OpacaError, try_index};
+use crate::common::{self, OpacaError, try_index};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenType {
@@ -117,7 +117,7 @@ impl Into<String> for TokenType {
             .to_string(),
         };
 
-        str.to_string()
+        str
     }
 }
 
@@ -128,19 +128,23 @@ impl Display for TokenType {
     }
 }
 
+const SHOW_SHORT_PATH: bool = true;
+
 #[derive(Clone)]
 pub struct Token {
     typ: TokenType,
     col: usize,
     ln: usize,
+    file: String,
 }
 
 impl Token {
-    pub fn new(typ: TokenType, col: usize, ln: usize) -> Token {
+    pub fn new(typ: TokenType, col: usize, ln: usize, file: String) -> Token {
         Token {
             typ: typ,
             col: col,
             ln: ln,
+            file: file,
         }
     }
 
@@ -149,13 +153,26 @@ impl Token {
     }
 
     pub fn err(&self) -> String {
-        format!("Error on line {}, col {}:", self.ln, self.col)
+        format!(
+            "Error on line {}, col {} of {}:",
+            self.ln,
+            self.col,
+            if SHOW_SHORT_PATH {
+                self.file.split(common::PATH_SEP).last().unwrap()
+            } else {
+                &self.file
+            }
+        )
     }
 }
 
 impl Debug for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<{:?}, {}, {}>", self.typ, self.col, self.ln)
+        write!(
+            f,
+            "<{:?}, {}, {}, '{}'>",
+            self.typ, self.col, self.ln, self.file
+        )
     }
 }
 
@@ -223,6 +240,7 @@ fn create_duotoks() -> HashMap<&'static str, TokenType> {
 }
 
 pub struct Lexer {
+    file: String,
     text: Vec<char>,
     idx: usize,
     col: usize,
@@ -232,8 +250,9 @@ pub struct Lexer {
 }
 
 impl Lexer {
-    pub fn new(text: &String) -> Lexer {
+    pub fn new(file: String, text: &String) -> Lexer {
         Lexer {
+            file: file,
             text: text.chars().collect(),
             idx: 0,
             col: 1,
@@ -251,6 +270,10 @@ impl Lexer {
             self.ln += 1;
             self.col = 1;
         }
+    }
+
+    fn new_token(&self, typ: TokenType, col: usize, ln: usize) -> Token {
+        Token::new(typ, col, ln, self.file.clone())
     }
 
     fn is_num(&self, idx: usize) -> bool {
@@ -290,7 +313,7 @@ impl Lexer {
             TokenType::Int(str.parse().expect(e_msg.as_str()))
         };
 
-        Token::new(typ, startcol, startln)
+        Token::new(typ, startcol, startln, self.file.clone())
     }
 
     fn collect_ident(&mut self) -> Token {
@@ -329,7 +352,7 @@ impl Lexer {
             _ => TokenType::Ident(str),
         };
 
-        Token::new(tt, startcol, startln)
+        self.new_token(tt, startcol, startln)
     }
 
     fn collect_string(&mut self) -> Result<Token, OpacaError> {
@@ -351,7 +374,7 @@ impl Lexer {
                     '0' => '\u{0}',
                     _ => {
                         return Err(token_anaerr!(
-                            Token::new(TokenType::Eof, self.col, self.ln),
+                            Token::new(TokenType::Eof, self.col, self.ln, self.file.clone()),
                             "invalid escape character '{}'",
                             ch
                         ));
@@ -372,14 +395,14 @@ impl Lexer {
 
         if !try_index(&self.text, self.idx).is_some_and(|ch| *ch == '"') {
             return Err(token_anaerr!(
-                Token::new(TokenType::Eof, self.col, self.ln),
+                self.new_token(TokenType::Eof, self.col, self.ln),
                 "unterminated string literal",
             ));
         }
 
         self.adv();
 
-        Ok(Token::new(TokenType::String(str), startcol, startln))
+        Ok(self.new_token(TokenType::String(str), startcol, startln))
     }
 
     fn skip_singleline_comment(&mut self) {
@@ -404,7 +427,7 @@ impl Lexer {
         }
 
         Err(token_anaerr!(
-            Token::new(TokenType::Eof, startcol, startln),
+            self.new_token(TokenType::Eof, startcol, startln),
             "unterminated multi-line comment",
         ))
     }
@@ -442,23 +465,23 @@ impl Lexer {
             } else if *ch == '"' {
                 tokens.push(self.collect_string()?)
             } else if let Some(duott) = self.check_duotok(ch) {
-                tokens.push(Token::new(duott.clone(), self.col, self.ln));
+                tokens.push(self.new_token(duott.clone(), self.col, self.ln));
                 self.adv();
                 self.adv()
             } else if let Some(tt) = self.chartoks.get(ch) {
-                tokens.push(Token::new(tt.clone(), self.col, self.ln));
+                tokens.push(self.new_token(tt.clone(), self.col, self.ln));
 
                 self.adv()
             } else {
                 return Err(token_anaerr!(
-                    Token::new(TokenType::Eof, self.col, self.ln),
+                    self.new_token(TokenType::Eof, self.col, self.ln),
                     "unexpected character '{}'",
                     ch
                 ));
             }
         }
 
-        tokens.push(Token::new(TokenType::Eof, self.col, self.ln));
+        tokens.push(self.new_token(TokenType::Eof, self.col, self.ln));
 
         Ok(tokens)
     }

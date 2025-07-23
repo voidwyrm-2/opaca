@@ -6,7 +6,13 @@ mod runtime;
 
 use clap::Parser;
 
-use crate::grammar::{lexer::Lexer, parser};
+use crate::{
+    common::OpacaError,
+    grammar::{
+        lexer::{Lexer, Token},
+        parser,
+    },
+};
 
 type OpacaParser = parser::Parser;
 
@@ -37,62 +43,59 @@ fn exit_with_msg(msg: String) -> ! {
     exit(1)
 }
 
-fn main() {
+fn main() -> Result<(), OpacaError> {
     let args = Args::parse();
 
     if args.version {
         println!("Opaca version {}", runtime::OPACA_VERSION);
-        return;
+        return Ok(());
     }
 
     if args.rem.len() == 0 {
-        exit_with_msg(String::from("no input files"));
+        return Err(OpacaError::from(String::from("no input files")));
     }
 
-    let mut buf = String::new();
+    let mut all_tokens: Vec<Token> = Vec::new();
 
-    for file in &args.rem {
-        let content = match fs::read_to_string(file) {
-            Ok(v) => v,
-            Err(e) => {
-                exit_with_msg(e.to_string());
-            }
-        };
+    for path in &args.rem {
+        let content = match fs::read_to_string(path) {
+            Ok(v) => Ok(v),
+            Err(e) => Err(OpacaError::from(e)),
+        }?;
 
-        buf.push_str(&content.clone())
-    }
+        let canconical = match fs::canonicalize(path) {
+            Ok(v) => Ok(v),
+            Err(e) => Err(OpacaError::from(e)),
+        }?;
 
-    let mut lexer = Lexer::new(&buf);
+        let mut lexer = Lexer::new(canconical.to_str().unwrap().to_string(), &content);
 
-    let tokens = match lexer.lex() {
-        Ok(v) => v,
-        Err(e) => {
-            exit_with_msg(e.to_string());
+        let tokens = lexer.lex()?;
+
+        for t in tokens {
+            all_tokens.push(t);
         }
-    };
+    }
 
     if args.tokens {
         println!("tokens:");
 
-        for (i, token) in tokens.iter().enumerate() {
+        for (i, token) in all_tokens.iter().enumerate() {
             println!(" {}: {}", i, token);
         }
     }
 
-    let mut parser = OpacaParser::new(tokens);
+    let mut parser = OpacaParser::new(all_tokens);
 
-    let nodes = match parser.parse() {
-        Ok(v) => v,
-        Err(e) => {
-            exit_with_msg(e.to_string());
-        }
-    };
+    let nodes = parser.parse()?;
 
     if args.nodes {
         println!("nodes:");
 
         for (i, node) in nodes.iter().enumerate() {
-            println!(" {}:\n{}", i, node);
+            println!("{}:\n{}\n", i, node);
         }
     }
+
+    Ok(())
 }
