@@ -1,0 +1,3 @@
+module Main is
+    exports main, square, cat, dog;
+end

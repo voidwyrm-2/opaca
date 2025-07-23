@@ -1,0 +1,7 @@
+module Main is
+    use std/io;
+    exports main;
+
+    fun main () =
+        io.println("Meow! Merow!");
+end

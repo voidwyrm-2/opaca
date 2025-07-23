@@ -1,0 +1,17 @@
+module Main is
+    use std.io;
+    exports main;
+
+    type Person
+        name;
+        age;
+    end
+
+    fun formatPerson (person) =
+        io.format("{{ name: '{0}', age: {1} }}", person.name, person.age);
+
+    fun main () = do
+        let person = Person("Jacob", 42);
+        io.println(formatPerson(person));
+    end
+end

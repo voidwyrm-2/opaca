@@ -1,0 +1,7 @@
+module Main is
+    fun main () = do
+        square(20 * 3 + 2);
+    end;
+
+    fun square (n) = n * n;
+end

@@ -1,0 +1,3 @@
+module Main is
+    use std.system.io.stdout;
+end
