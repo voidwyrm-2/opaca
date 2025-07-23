@@ -458,7 +458,10 @@ impl Parser {
                     nodes.push(node);
                 }
 
-                TokenType::Ident(_) => {
+                TokenType::Int(_)
+                | TokenType::Float(_)
+                | TokenType::String(_)
+                | TokenType::Ident(_) => {
                     self.idx -= 1;
 
                     let expr = self.parse_expr(0)?;
@@ -468,6 +471,14 @@ impl Parser {
                     }
 
                     nodes.push(expr);
+                }
+
+                TokenType::Return => {
+                    let node = self.parse_return()?;
+
+                    self.expect_and_eat(TokenType::StatementEnding)?;
+
+                    nodes.push(node);
                 }
 
                 TokenType::End => break,
@@ -512,10 +523,14 @@ impl Parser {
         })
     }
 
+    fn parse_return(&mut self) -> ParserNodeResult {
+        let expr = self.parse_expr(0)?;
+
+        Ok(Node::Return(Box::new(expr)))
+    }
+
     fn parse_expr(&mut self, min_bp: u8) -> ParserNodeResult {
         let lht = self.next().clone();
-
-        println!("lht: {}", lht);
 
         let mut lhs = match lht.get_typ() {
             TokenType::Int(_) => Node::Int(lht),
@@ -541,7 +556,7 @@ impl Parser {
             let opt = self.next().clone();
 
             let op = match opt.get_typ() {
-                TokenType::Eof | TokenType::StatementEnding => break,
+                TokenType::Eof => break,
 
                 TokenType::And
                 | TokenType::Or
@@ -557,12 +572,10 @@ impl Parser {
                 | TokenType::Subtract => opt,
 
                 // non-operators
-                TokenType::ParenRight => opt,
+                TokenType::StatementEnding | TokenType::ParenRight => opt,
 
                 TokenType::ParenLeft => {
                     let tuple = self.parse_tuple()?;
-
-                    println!("after tuple: {}", self.cur());
 
                     // roll back index if the tuple is non-empty
                     // this exception is needed because
@@ -574,8 +587,6 @@ impl Parser {
                     }
 
                     self.expect_and_eat(TokenType::ParenRight)?;
-
-                    println!("after tuple expect: {}", self.cur());
 
                     lhs = Node::FunctionCall {
                         callee: Box::new(lhs),
@@ -611,6 +622,8 @@ impl Parser {
                 continue;
             }
 
+            // roll-back so the caller can see the token that was stopped on
+            self.idx -= 1;
             break;
         }
 
