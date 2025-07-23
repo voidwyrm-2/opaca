@@ -7,8 +7,8 @@ use crate::{
 };
 
 pub enum FunctionBody {
-    Block(Vec<Node>),
-    Expr(Box<Node>),
+    Block(Node),
+    Expr(Node),
 }
 
 pub enum Node {
@@ -24,11 +24,12 @@ pub enum Node {
         start: Token,
         symbols: Vec<Token>,
     },
+    Block(Vec<Node>),
     Function {
         start: Token,
         name: Token,
         params: Vec<Token>,
-        body: FunctionBody,
+        body: Box<FunctionBody>,
     },
     Let {
         start: Token,
@@ -49,6 +50,11 @@ pub enum Node {
         args: Box<Node>,
     },
     Return(Box<Node>),
+    If {
+        expr: Box<Node>,
+        true_block: Box<Node>,
+        false_block: Option<Box<Node>>,
+    },
 }
 
 impl Node {
@@ -90,20 +96,25 @@ impl Node {
                 )
             }
 
+            Self::Block(contents) => {
+                let contentsf = contents
+                    .iter()
+                    .map(|n| n.format(indent + 1))
+                    .collect::<Vec<String>>()
+                    .join(",\n");
+
+                format!("Block {{\n contents:\n {},\n}}", contentsf)
+            }
+
             Self::Function {
                 start,
                 name,
                 params,
                 body,
             } => {
-                let bodyf = match body {
-                    FunctionBody::Block(block) => block
-                        .iter()
-                        .map(|n| n.format(indent + 1))
-                        .collect::<Vec<String>>()
-                        .join(",\n"),
-
-                    FunctionBody::Expr(expr) => expr.format(indent + 1),
+                let bodyf = match **body {
+                    FunctionBody::Block(ref block) => block.format(indent + 1),
+                    FunctionBody::Expr(ref expr) => expr.format(indent + 1),
                 };
 
                 let paramsf = params
@@ -157,6 +168,23 @@ impl Node {
             ),
 
             Self::Return(expr) => format!("Return: {{\n expr:\n  {}\n}}", expr.format(indent + 1)),
+
+            Self::If {
+                expr,
+                true_block,
+                false_block,
+            } => {
+                format!(
+                    "If {{\n expr:\n {},\n true_block:\n {},\n false_block:\n {},\n}}",
+                    expr.format(indent + 1),
+                    true_block.format(indent + 1),
+                    if let Some(block) = false_block {
+                        block.format(indent + 1)
+                    } else {
+                        String::new()
+                    },
+                )
+            }
         };
 
         let mut pad = String::new();
@@ -385,7 +413,7 @@ impl Parser {
 
         match tok.get_typ() {
             TokenType::Do => {
-                let nodes = self.parse_fun_block(&tok)?;
+                let node = self.parse_do_block(&tok, false)?;
 
                 self.expect_and_eat(TokenType::End)?;
 
@@ -393,7 +421,7 @@ impl Parser {
                     start: start.clone(),
                     name: name.clone(),
                     params: params,
-                    body: FunctionBody::Block(nodes),
+                    body: Box::new(FunctionBody::Block(node)),
                 })
             }
 
@@ -411,7 +439,7 @@ impl Parser {
                     start: start.clone(),
                     name: name.clone(),
                     params: params,
-                    body: FunctionBody::Expr(Box::new(expr)),
+                    body: Box::new(FunctionBody::Expr(expr)),
                 })
             }
         }
@@ -439,11 +467,11 @@ impl Parser {
         Ok(args)
     }
 
-    fn parse_fun_block(&mut self, start: &Token) -> Result<Vec<Node>, OpacaError> {
+    fn parse_do_block(&mut self, start: &Token, is_if: bool) -> Result<Node, OpacaError> {
         let mut nodes: Vec<Node> = Vec::new();
 
         if self.cur().get_typ().is_ending() {
-            return Ok(nodes);
+            return Ok(Node::Block(nodes));
         }
 
         loop {
@@ -461,13 +489,15 @@ impl Parser {
                 TokenType::Int(_)
                 | TokenType::Float(_)
                 | TokenType::String(_)
-                | TokenType::Ident(_) => {
+                | TokenType::Ident(_)
+                | TokenType::If => {
                     self.idx -= 1;
 
                     let expr = self.parse_expr(0)?;
 
-                    if *self.cur().get_typ() != TokenType::End {
-                        self.expect_and_eat(TokenType::StatementEnding)?;
+                    match self.cur().get_typ() {
+                        TokenType::End | TokenType::Elsif | TokenType::Else => (),
+                        _ => self.expect_and_eat(TokenType::StatementEnding)?,
                     }
 
                     nodes.push(expr);
@@ -481,19 +511,26 @@ impl Parser {
                     nodes.push(node);
                 }
 
-                TokenType::End => break,
+                TokenType::End | TokenType::Elsif | TokenType::Else => {
+                    if *tok.get_typ() != TokenType::End && !is_if {
+                        return Err(token_anaerr!(
+                            start,
+                            "cannot use '{}' outside of an if block",
+                            tok.get_typ()
+                        ));
+                    } else {
+                        break;
+                    }
+                }
 
                 TokenType::Eof => {
-                    return Err(token_anaerr!(
-                        start,
-                        "expected 'end' to terminate function body",
-                    ));
+                    return Err(token_anaerr!(start, "expected 'end' to terminate block",));
                 }
 
                 _ => {
                     return Err(token_anaerr!(
                         tok,
-                        "unexpected token '{}' in function body",
+                        "unexpected token '{}' in block",
                         tok.get_typ()
                     ));
                 }
@@ -504,7 +541,7 @@ impl Parser {
             }
         }
 
-        Ok(nodes)
+        Ok(Node::Block(nodes))
     }
 
     fn parse_let(&mut self, start: &Token) -> ParserNodeResult {
@@ -543,6 +580,7 @@ impl Parser {
 
                 expr
             }
+            TokenType::If => self.parse_if(false)?,
             _ => {
                 return Err(token_anaerr!(
                     lht,
@@ -572,7 +610,12 @@ impl Parser {
                 | TokenType::Subtract => opt,
 
                 // non-operators
-                TokenType::StatementEnding | TokenType::ParenRight => opt,
+                TokenType::StatementEnding
+                | TokenType::ParenRight
+                | TokenType::Do
+                | TokenType::Elsif
+                | TokenType::Else
+                | TokenType::End => opt,
 
                 TokenType::ParenLeft => {
                     let tuple = self.parse_tuple()?;
@@ -650,6 +693,56 @@ impl Parser {
         }
 
         Ok(Node::Tuple(items))
+    }
+
+    fn parse_if(&mut self, nested: bool) -> ParserNodeResult {
+        let expr = self.parse_expr(0)?;
+
+        let true_start = self.expect_and_get(TokenType::Do)?.clone();
+
+        let true_block = self.parse_do_block(&true_start, true)?;
+
+        self.idx -= 1;
+
+        let cur = self.cur().clone();
+
+        if *cur.get_typ() == TokenType::Elsif {
+            self.eat();
+
+            let elsif_block = self.parse_if(true)?;
+
+            if !nested {
+                self.expect_and_eat(TokenType::End)?;
+            }
+
+            Ok(Node::If {
+                expr: Box::new(expr),
+                true_block: Box::new(true_block),
+                false_block: Some(Box::new(elsif_block)),
+            })
+        } else if *cur.get_typ() == TokenType::Else {
+            self.eat();
+
+            let else_block = self.parse_do_block(&cur, false)?;
+
+            if !nested {
+                self.expect_and_eat(TokenType::End)?;
+            }
+
+            Ok(Node::If {
+                expr: Box::new(expr),
+                true_block: Box::new(true_block),
+                false_block: Some(Box::new(else_block)),
+            })
+        } else {
+            self.expect_and_eat(TokenType::End)?;
+
+            Ok(Node::If {
+                expr: Box::new(expr),
+                true_block: Box::new(true_block),
+                false_block: None,
+            })
+        }
     }
 }
 
