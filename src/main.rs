@@ -38,11 +38,6 @@ struct Args {
     rem: Vec<String>,
 }
 
-fn exit_with_msg(msg: String) -> ! {
-    println!("{}", msg);
-    exit(1)
-}
-
 fn main() -> Result<(), OpacaError> {
     let args = Args::parse();
 

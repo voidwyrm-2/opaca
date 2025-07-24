@@ -27,7 +27,7 @@ pub enum Node {
     Block(Vec<Node>),
     Function {
         start: Token,
-        name: Token,
+        name: Option<Token>,
         params: Vec<Token>,
         body: Box<FunctionBody>,
     },
@@ -55,6 +55,7 @@ pub enum Node {
         true_block: Box<Node>,
         false_block: Option<Box<Node>>,
     },
+    BlockExpr(Box<Node>),
 }
 
 impl Node {
@@ -124,7 +125,7 @@ impl Node {
                     .join(",\n  ");
 
                 format!(
-                    "Function {{\n start: {},\n name: {},\n params:\n  {},\n contents:\n{},\n}}",
+                    "Function {{\n start: {},\n name: {:?},\n params:\n  {},\n contents:\n{},\n}}",
                     start, name, paramsf, bodyf
                 )
             }
@@ -184,6 +185,10 @@ impl Node {
                         String::new()
                     },
                 )
+            }
+
+            Self::BlockExpr(expr) => {
+                format!("Expr: {{\n expr:\n  {}\n}}", expr.format(indent + 1))
             }
         };
 
@@ -419,7 +424,7 @@ impl Parser {
 
                 Ok(Node::Function {
                     start: start.clone(),
-                    name: name.clone(),
+                    name: Some(name.clone()),
                     params: params,
                     body: Box::new(FunctionBody::Block(node)),
                 })
@@ -437,7 +442,7 @@ impl Parser {
 
                 Ok(Node::Function {
                     start: start.clone(),
-                    name: name.clone(),
+                    name: Some(name.clone()),
                     params: params,
                     body: Box::new(FunctionBody::Expr(expr)),
                 })
@@ -456,6 +461,11 @@ impl Parser {
             let ident = self.expect_and_get(TokenType::Ident(String::new()))?;
 
             args.push(ident.clone());
+
+            if *self.cur().get_typ() == TokenType::Colon {
+                self.eat();
+                self.expect_and_eat(TokenType::Ident(String::new()))?;
+            }
 
             if self.cur().get_typ().is_ending() || *self.cur().get_typ() == TokenType::ParenRight {
                 break;
@@ -500,7 +510,7 @@ impl Parser {
                         _ => self.expect_and_eat(TokenType::StatementEnding)?,
                     }
 
-                    nodes.push(expr);
+                    nodes.push(Node::BlockExpr(Box::new(expr)));
                 }
 
                 TokenType::Return => {

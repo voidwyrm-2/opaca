@@ -1,3 +1,3 @@
-module Main is
+module main is
     fun main (argc, argv) = do end;
 end

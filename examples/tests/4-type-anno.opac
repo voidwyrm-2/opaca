@@ -1,0 +1,3 @@
+module main is
+    fun main (argc: int, argv: list) = do end;
+end
