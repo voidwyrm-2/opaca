@@ -1,6 +1,4 @@
 module Main is
-    use std.io;
-
     let state = 0;
 
     fun if_expr() =

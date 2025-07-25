@@ -1,4 +1,6 @@
 module Main is
+    exports main/0;
+
     fun main () = do
         square(20 * 3 + 2);
     end;

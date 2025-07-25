@@ -58,12 +58,7 @@ fn main() -> Result<(), OpacaError> {
             Err(e) => Err(OpacaError::from(e)),
         }?;
 
-        let canconical = match fs::canonicalize(path) {
-            Ok(v) => Ok(v),
-            Err(e) => Err(OpacaError::from(e)),
-        }?;
-
-        let mut lexer = Lexer::new(canconical.to_str().unwrap().to_string(), &content);
+        let mut lexer = Lexer::new(path.clone(), &content);
 
         let tokens = lexer.lex()?;
 

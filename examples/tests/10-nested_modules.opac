@@ -1,0 +1,13 @@
+module Rand is
+    module Int is
+        exports rand/0;
+
+        fun rand () = 0;
+    end
+
+    module Float is
+        exports rand/0;
+
+        fun rand () = 0.0;
+    end
+end

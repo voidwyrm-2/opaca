@@ -1,7 +1,7 @@
 module Main is
-    use std/io;
-    exports main;
+    use std.Io;
+    exports main/0;
 
     fun main () =
-        io.println("Meow! Merow!");
+        Io.println("Meow! Merow!");
 end

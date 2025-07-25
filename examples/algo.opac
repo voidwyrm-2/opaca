@@ -1,0 +1,39 @@
+module Main is
+    use std.Io;
+    use Math;
+    exports main/0;
+
+    fun runSum () = do
+        let input = [10, 20, 30];
+        let result = Math.sum(input);
+        Io.println(result);
+    end;
+
+    fun runFib () = do
+        let input = 10;
+        let result = Math.sum(input);
+        Io.println(result);
+    end;
+
+    fun main () = do
+        runSum();
+        runFib();
+    end;
+
+end
+
+module Math is
+    exports sum/1, fib/1;
+
+    fun sum (ls) =
+        reduce(ls, fun(acc, item) = acc + item);
+
+    fun fib (n) =
+        if n == 1 do
+            1
+        elsif n < 1 do
+            0
+        else
+            fib(n - 1) + fib(n -2)
+        end;
+end

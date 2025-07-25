@@ -3,11 +3,12 @@ use std::{
     fmt::{Debug, Display},
 };
 
-use crate::common::{self, OpacaError, try_index};
+use crate::common::{OpacaError, try_index};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenType {
     Eof,
+    Bool(bool),
     Int(i32),
     Float(f32),
     String(String),
@@ -66,11 +67,13 @@ impl TokenType {
 impl Into<String> for TokenType {
     fn into(self) -> String {
         let str = match self {
+            Self::Bool(v) => v.to_string(),
             Self::Int(v) => v.to_string(),
             Self::Float(v) => v.to_string(),
             Self::String(v) => format!("\"{}\"", v),
             Self::Ident(v) => v,
             _ => match self {
+                Self::Bool(_) => unreachable!(),
                 Self::Int(_) => unreachable!(),
                 Self::Float(_) => unreachable!(),
                 Self::String(_) => unreachable!(),
@@ -128,8 +131,6 @@ impl Display for TokenType {
     }
 }
 
-const SHOW_SHORT_PATH: bool = true;
-
 #[derive(Clone)]
 pub struct Token {
     typ: TokenType,
@@ -153,16 +154,7 @@ impl Token {
     }
 
     pub fn err(&self) -> String {
-        format!(
-            "Error on line {}, col {} of {}:",
-            self.ln,
-            self.col,
-            if SHOW_SHORT_PATH {
-                self.file.split(common::PATH_SEP).last().unwrap()
-            } else {
-                &self.file
-            }
-        )
+        format!("{}:{}:{}", self.file, self.ln, self.col)
     }
 }
 
@@ -195,7 +187,7 @@ impl PartialEq<TokenType> for Token {
 #[macro_export]
 macro_rules! token_err {
     ($tok:expr, $fmt:expr, $($msg:tt)*) => {
-        format!("{} {}", $tok.err(), format!($fmt, $($msg)*))
+        format!("{}\n{}", $tok.err(), format!($fmt, $($msg)*))
     };
 }
 
@@ -335,6 +327,8 @@ impl Lexer {
         }
 
         let tt = match str.as_str() {
+            "true" => TokenType::Bool(true),
+            "false" => TokenType::Bool(false),
             "module" => TokenType::Module,
             "is" => TokenType::Is,
             "fun" => TokenType::Fun,

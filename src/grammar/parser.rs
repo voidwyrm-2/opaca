@@ -6,11 +6,13 @@ use crate::{
     token_anaerr,
 };
 
+#[derive(Debug, Clone)]
 pub enum FunctionBody {
     Block(Node),
     Expr(Node),
 }
 
+#[derive(Debug, Clone)]
 pub enum Node {
     Module {
         name: Token,
@@ -22,7 +24,7 @@ pub enum Node {
     },
     Exports {
         start: Token,
-        symbols: Vec<Token>,
+        symbols: Vec<(Token, u32)>,
     },
     Block(Vec<Node>),
     Function {
@@ -36,8 +38,11 @@ pub enum Node {
         name: Token,
         expr: Box<Node>,
     },
+    Bool(Token),
     Int(Token),
     Float(Token),
+    String(Token),
+    List(Vec<Node>),
     Ident(Token),
     BinaryExpr {
         left: Box<Node>,
@@ -87,7 +92,7 @@ impl Node {
             Self::Exports { start, symbols } => {
                 let symbolsf = symbols
                     .iter()
-                    .map(|n| n.to_string())
+                    .map(|n| format!("{} with {} args", n.0, n.1))
                     .collect::<Vec<String>>()
                     .join(",\n  ");
 
@@ -137,11 +142,34 @@ impl Node {
                 )
             }
 
+            Self::Bool(t) => format!("Bool: {}", t),
+
             Self::Int(t) => format!("Int: {}", t),
 
             Self::Float(t) => format!("Float: {}", t),
 
+            Self::String(t) => format!("String: {}", t),
+
+            Self::List(contents) => {
+                let contentsf = contents
+                    .iter()
+                    .map(|n| n.format(indent + 1))
+                    .collect::<Vec<String>>()
+                    .join(",\n");
+
+                format!("List {{\n contents:\n {},\n}}", contentsf)
+            }
+
             Self::Ident(t) => format!("Ident: {}", t),
+
+            Self::BinaryExpr { left, op, right } => {
+                format!(
+                    "BinaryExpr {{\n left:\n  {},\n op: {},\n right:\n  {},\n}}",
+                    left.format(indent + 1),
+                    op,
+                    right.format(indent + 1),
+                )
+            }
 
             Self::Tuple(contents) => {
                 let contentsf = contents
@@ -151,15 +179,6 @@ impl Node {
                     .join(",\n");
 
                 format!("Tuple {{\n contents:\n {},\n}}", contentsf)
-            }
-
-            Self::BinaryExpr { left, op, right } => {
-                format!(
-                    "BinaryExpr {{\n left:\n  {},\n op: {},\n right:\n  {},\n}}",
-                    left.format(indent + 1),
-                    op,
-                    right.format(indent + 1),
-                )
             }
 
             Self::FunctionCall { callee, args } => format!(
@@ -315,7 +334,7 @@ impl Parser {
                 }
 
                 TokenType::Fun => {
-                    let node = self.parse_fun(&tok)?;
+                    let node = self.parse_fun(&tok, false)?;
 
                     self.expect_and_eat(TokenType::StatementEnding)?;
 
@@ -325,7 +344,11 @@ impl Parser {
                 TokenType::End => break,
 
                 TokenType::Module => {
-                    return Err(token_anaerr!(tok, "module nesting is not supported",));
+                    self.idx -= 1;
+
+                    let node = self.parse_module()?;
+
+                    nodes.push(node);
                 }
 
                 TokenType::Let => {
@@ -381,12 +404,27 @@ impl Parser {
     }
 
     fn parse_exports(&mut self, start: &Token) -> ParserNodeResult {
-        let mut symbols: Vec<Token> = Vec::new();
+        let mut symbols: Vec<(Token, u32)> = Vec::new();
 
         loop {
-            let ident = self.expect_and_get(TokenType::Ident(String::new()))?;
+            let ident = self
+                .expect_and_get(TokenType::Ident(String::new()))?
+                .clone();
 
-            symbols.push(ident.clone());
+            self.expect_and_eat(TokenType::Divide)?;
+
+            let argc_tok = self.expect_and_get(TokenType::Int(0))?;
+
+            let argc = match argc_tok.get_typ() {
+                TokenType::Int(n) => n,
+                _ => unreachable!(),
+            };
+
+            if *argc < 0 {
+                return Err(token_anaerr!(argc_tok, "argument count cannot be negative",));
+            }
+
+            symbols.push((ident, *argc as u32));
 
             if self.cur().get_typ().is_ending() {
                 break;
@@ -401,16 +439,26 @@ impl Parser {
         })
     }
 
-    fn parse_fun(&mut self, start: &Token) -> ParserNodeResult {
-        let name = self
-            .expect_and_get(TokenType::Ident(String::new()))?
-            .clone();
+    fn parse_fun(&mut self, start: &Token, anonymous: bool) -> ParserNodeResult {
+        let name = if anonymous {
+            None
+        } else {
+            Some(
+                self.expect_and_get(TokenType::Ident(String::new()))?
+                    .clone(),
+            )
+        };
 
         self.expect_and_eat(TokenType::ParenLeft)?;
 
         let params = self.parse_fun_params()?;
 
         self.expect_and_eat(TokenType::ParenRight)?;
+
+        if *self.cur().get_typ() == TokenType::Colon {
+            self.eat();
+            self.expect_and_eat(TokenType::Ident(String::new()))?;
+        }
 
         self.expect_and_eat(TokenType::Assign)?;
 
@@ -424,7 +472,7 @@ impl Parser {
 
                 Ok(Node::Function {
                     start: start.clone(),
-                    name: Some(name.clone()),
+                    name: name,
                     params: params,
                     body: Box::new(FunctionBody::Block(node)),
                 })
@@ -442,7 +490,7 @@ impl Parser {
 
                 Ok(Node::Function {
                     start: start.clone(),
-                    name: Some(name.clone()),
+                    name: name,
                     params: params,
                     body: Box::new(FunctionBody::Expr(expr)),
                 })
@@ -580,8 +628,17 @@ impl Parser {
         let lht = self.next().clone();
 
         let mut lhs = match lht.get_typ() {
+            TokenType::Bool(_) => Node::Bool(lht),
             TokenType::Int(_) => Node::Int(lht),
             TokenType::Float(_) => Node::Float(lht),
+            TokenType::String(_) => Node::String(lht),
+            TokenType::BracketLeft => {
+                let expr = self.parse_list()?;
+
+                self.expect_and_eat(TokenType::BracketRight)?;
+
+                expr
+            }
             TokenType::Ident(_) => Node::Ident(lht),
             TokenType::ParenLeft => {
                 let expr = self.parse_expr(0)?;
@@ -591,6 +648,7 @@ impl Parser {
                 expr
             }
             TokenType::If => self.parse_if(false)?,
+            TokenType::Fun => self.parse_fun(&lht, true)?,
             _ => {
                 return Err(token_anaerr!(
                     lht,
@@ -622,22 +680,15 @@ impl Parser {
                 // non-operators
                 TokenType::StatementEnding
                 | TokenType::ParenRight
+                | TokenType::BracketRight
                 | TokenType::Do
                 | TokenType::Elsif
                 | TokenType::Else
+                | TokenType::Comma
                 | TokenType::End => opt,
 
                 TokenType::ParenLeft => {
                     let tuple = self.parse_tuple()?;
-
-                    // roll back index if the tuple is non-empty
-                    // this exception is needed because
-                    // the expression parsing consumes the closing ')'
-                    if let Node::Tuple(ref items) = tuple {
-                        if items.len() > 0 {
-                            self.idx -= 2;
-                        }
-                    }
 
                     self.expect_and_eat(TokenType::ParenRight)?;
 
@@ -646,7 +697,7 @@ impl Parser {
                         args: Box::new(tuple),
                     };
 
-                    break;
+                    self.next().clone()
                 }
 
                 _ => {
@@ -681,6 +732,29 @@ impl Parser {
         }
 
         Ok(lhs)
+    }
+
+    fn parse_list(&mut self) -> ParserNodeResult {
+        let mut items: Vec<Node> = Vec::new();
+
+        if self.cur().get_typ().is_ending() || *self.cur().get_typ() == TokenType::BracketRight {
+            return Ok(Node::List(items));
+        }
+
+        loop {
+            let expr = self.parse_expr(0)?;
+
+            items.push(expr);
+
+            if self.cur().get_typ().is_ending() || *self.cur().get_typ() == TokenType::BracketRight
+            {
+                break;
+            }
+
+            self.expect_and_eat(TokenType::Comma)?
+        }
+
+        Ok(Node::List(items))
     }
 
     fn parse_tuple(&mut self) -> ParserNodeResult {
