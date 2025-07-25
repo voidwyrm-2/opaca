@@ -57,6 +57,14 @@ impl TokenType {
         *self == Self::Eof || *self == Self::StatementEnding || *self == Self::End
     }
 
+    pub fn get_string(&self) -> &String {
+        match self {
+            Self::Ident(s) => s,
+            Self::String(s) => s,
+            _ => panic!("TokenType::get_string expects TokenType::Ident or TokenType::String"),
+        }
+    }
+
     pub fn is_pair_of(&self, other: &TokenType) -> bool {
         (*self == Self::ParenLeft && *other == Self::ParenRight)
             || (*self == Self::BracketLeft && *other == Self::BracketRight)
@@ -192,7 +200,7 @@ macro_rules! token_err {
 }
 
 #[macro_export]
-macro_rules! token_anaerr {
+macro_rules! token_opacaerr {
     ($tok:expr, $fmt:expr, $($msg:tt)*) => {
         OpacaError::from(crate::token_err!($tok, $fmt, $($msg)*))
     };
@@ -367,7 +375,7 @@ impl Lexer {
                     'a' => '\u{7}',
                     '0' => '\u{0}',
                     _ => {
-                        return Err(token_anaerr!(
+                        return Err(token_opacaerr!(
                             Token::new(TokenType::Eof, self.col, self.ln, self.file.clone()),
                             "invalid escape character '{}'",
                             ch
@@ -388,7 +396,7 @@ impl Lexer {
         }
 
         if !try_index(&self.text, self.idx).is_some_and(|ch| *ch == '"') {
-            return Err(token_anaerr!(
+            return Err(token_opacaerr!(
                 self.new_token(TokenType::Eof, self.col, self.ln),
                 "unterminated string literal",
             ));
@@ -420,7 +428,7 @@ impl Lexer {
             self.adv()
         }
 
-        Err(token_anaerr!(
+        Err(token_opacaerr!(
             self.new_token(TokenType::Eof, startcol, startln),
             "unterminated multi-line comment",
         ))
@@ -467,7 +475,7 @@ impl Lexer {
 
                 self.adv()
             } else {
-                return Err(token_anaerr!(
+                return Err(token_opacaerr!(
                     self.new_token(TokenType::Eof, self.col, self.ln),
                     "unexpected character '{}'",
                     ch

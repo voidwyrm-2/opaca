@@ -3,7 +3,7 @@ use std::fmt::Display;
 use crate::{
     common::{OpacaError, variant_eq},
     grammar::lexer::{Token, TokenType},
-    token_anaerr,
+    token_opacaerr,
 };
 
 #[derive(Debug, Clone)]
@@ -264,7 +264,7 @@ impl Parser {
         if variant_eq(t.get_typ(), &tt) {
             Ok(())
         } else {
-            Err(token_anaerr!(
+            Err(token_opacaerr!(
                 t,
                 "expected token '{}', but found '{}' instead",
                 tt,
@@ -302,7 +302,7 @@ impl Parser {
         Ok(modules)
     }
 
-    fn parse_module(&mut self) -> ParserNodeResult {
+    pub fn parse_module(&mut self) -> ParserNodeResult {
         let mut nodes: Vec<Node> = Vec::new();
 
         let module_start = self.expect_and_get(TokenType::Module)?.clone();
@@ -360,14 +360,14 @@ impl Parser {
                 }
 
                 TokenType::Eof => {
-                    return Err(token_anaerr!(
+                    return Err(token_opacaerr!(
                         module_start,
                         "expected 'end' to terminate module definition",
                     ));
                 }
 
                 _ => {
-                    return Err(token_anaerr!(
+                    return Err(token_opacaerr!(
                         tok,
                         "unexpected token '{}' in module definition",
                         tok.get_typ()
@@ -421,7 +421,10 @@ impl Parser {
             };
 
             if *argc < 0 {
-                return Err(token_anaerr!(argc_tok, "argument count cannot be negative",));
+                return Err(token_opacaerr!(
+                    argc_tok,
+                    "argument count cannot be negative",
+                ));
             }
 
             symbols.push((ident, *argc as u32));
@@ -439,7 +442,7 @@ impl Parser {
         })
     }
 
-    fn parse_fun(&mut self, start: &Token, anonymous: bool) -> ParserNodeResult {
+    pub fn parse_fun(&mut self, start: &Token, anonymous: bool) -> ParserNodeResult {
         let name = if anonymous {
             None
         } else {
@@ -478,7 +481,7 @@ impl Parser {
                 })
             }
 
-            TokenType::Eof | TokenType::StatementEnding => Err(token_anaerr!(
+            TokenType::Eof | TokenType::StatementEnding => Err(token_opacaerr!(
                 tok,
                 "expected expression or do .. end in function definition",
             )),
@@ -571,7 +574,7 @@ impl Parser {
 
                 TokenType::End | TokenType::Elsif | TokenType::Else => {
                     if *tok.get_typ() != TokenType::End && !is_if {
-                        return Err(token_anaerr!(
+                        return Err(token_opacaerr!(
                             start,
                             "cannot use '{}' outside of an if block",
                             tok.get_typ()
@@ -582,11 +585,11 @@ impl Parser {
                 }
 
                 TokenType::Eof => {
-                    return Err(token_anaerr!(start, "expected 'end' to terminate block",));
+                    return Err(token_opacaerr!(start, "expected 'end' to terminate block",));
                 }
 
                 _ => {
-                    return Err(token_anaerr!(
+                    return Err(token_opacaerr!(
                         tok,
                         "unexpected token '{}' in block",
                         tok.get_typ()
@@ -624,7 +627,7 @@ impl Parser {
         Ok(Node::Return(Box::new(expr)))
     }
 
-    fn parse_expr(&mut self, min_bp: u8) -> ParserNodeResult {
+    pub fn parse_expr(&mut self, min_bp: u8) -> ParserNodeResult {
         let lht = self.next().clone();
 
         let mut lhs = match lht.get_typ() {
@@ -650,7 +653,7 @@ impl Parser {
             TokenType::If => self.parse_if(false)?,
             TokenType::Fun => self.parse_fun(&lht, true)?,
             _ => {
-                return Err(token_anaerr!(
+                return Err(token_opacaerr!(
                     lht,
                     "unexpected token '{}' in expression",
                     lht.get_typ()
@@ -701,7 +704,7 @@ impl Parser {
                 }
 
                 _ => {
-                    return Err(token_anaerr!(
+                    return Err(token_opacaerr!(
                         opt,
                         "unexpected operator token '{}' in expression",
                         opt.get_typ()

@@ -1,4 +1,4 @@
-use std::{fs, process::exit};
+use std::{collections::HashMap, fs, process::exit};
 
 mod common;
 mod grammar;
@@ -10,8 +10,9 @@ use crate::{
     common::OpacaError,
     grammar::{
         lexer::{Lexer, Token},
-        parser,
+        parser::{self, Node},
     },
+    runtime::{interpretation, module::Module},
 };
 
 type OpacaParser = parser::Parser;
@@ -85,6 +86,28 @@ fn main() -> Result<(), OpacaError> {
         for (i, node) in nodes.iter().enumerate() {
             println!("{}:\n{}\n", i, node);
         }
+    }
+
+    let mut modules: HashMap<String, Module> = HashMap::new();
+
+    for node in nodes {
+        let (name, module) = interpretation::eval_module(node.clone())?;
+
+        if modules.contains_key(&name) {
+            if let Node::Module { name, .. } = node {
+                return Err(token_opacaerr!(
+                    name,
+                    "module '{}' already exists",
+                    name.get_typ().get_string()
+                ));
+            }
+        }
+
+        modules.insert(name, module);
+    }
+
+    if let Some(main_module) = modules.get(&String::from("Main")) {
+        let main_fun = main_module.get_symbol(&(String::from("main"), 0))?;
     }
 
     Ok(())
